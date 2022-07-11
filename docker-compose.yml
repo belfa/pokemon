@@ -1,21 +1,58 @@
-version: '3'
+version: '3.5'
 
 services:
-###> doctrine/doctrine-bundle ###
-  database:
-    image: postgres:${POSTGRES_VERSION:-13}-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-app}
-      # You should definitely change the password in production
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ChangeMe}
-      POSTGRES_USER: ${POSTGRES_USER:-symfony}
+  mysql:
+    container_name: test-performance-mysql
+    image: mysql:5.7.21
+    networks:
+      - default
+    ports:
+      - "3306:3306"
     volumes:
-      - db-data:/var/lib/postgresql/data:rw
-      # You may use a bind-mounted host directory instead, so that it is harder to accidentally remove the volume and lose all your data!
-      # - ./docker/db/data:/var/lib/postgresql/data:rw
-###< doctrine/doctrine-bundle ###
+      - ./docker/data/test-performance:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: atrapalo
 
-volumes:
-###> doctrine/doctrine-bundle ###
-  db-data:
-###< doctrine/doctrine-bundle ###
+  apache:
+    build: docker/apache
+    container_name: test-performance-apache
+    networks:
+      - default
+      - test-performance-network
+    ports:
+      - "80:80"
+      - "8000:8000"
+    volumes:
+      - ./docker/apache/config/base/apache2.conf:/etc/apache/apache2.conf
+      - ./docker/apache/config/access/:/home:delegated
+      - ./docker/apache/config/vhosts:/etc/apache2/sites-enabled:delegated
+      - ./docker/apache/config/ports/ports.conf:/etc/apache2/ports.conf:delegated
+      - .:/var/www/html/:delegated
+      - /var/www/html/docker
+    environment:
+      DATABASE_URL: mysql://root:atrapalo@test-performance-mysql:3306/pokedex?serverVersion=5.7.21
+    depends_on:
+      - php
+
+  php:
+    container_name: test-performance-php
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    networks:
+      - default
+    restart: unless-stopped
+    ports:
+      - "9090:9001"
+    volumes:
+      - .:/var/www/html/:delegated
+      - /var/www/html/docker
+    environment:
+      DATABASE_URL: mysql://root:atrapalo@test-performance-mysql:3306/pokedex?serverVersion=5.7.21
+    depends_on:
+      - mysql
+
+networks:
+  test-performance-network:
+    external: false
+    name: test-performance-network
